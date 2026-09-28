@@ -8,27 +8,6 @@ yet remove subtitles, emit detection events, or run a neural model. The
 interfaces for detection, optical flow, and inpainting are in place for those
 follow-on stages.
 
-## Features In This Milestone
-
-- FFmpeg C libraries for demuxing, decoding, encoding, and muxing; no FFmpeg CLI
-	is used in the processing pipeline.
-- OpenCV BGR frame conversion and replaceable detector, optical-flow, and
-	inpainter interfaces.
-- Default 8-second output chunks with 0.5-second context overlap on each side.
-- Only central frames are encoded. Original decoded presentation timestamps
-	are passed to the encoder; VFR input is not replaced with generated CFR PTS.
-- A three-stage decoder / processing / encoder handoff with bounded queues
-	(capacity three). The processing stage currently forwards chunks unchanged.
-- Compatible audio streams are packet-copied and timestamp-rescaled. Audio
-	codecs unsupported by the output container are omitted with a warning.
-- A JSON review report is always written beside the output unless
-	`--review-report` selects another path. This MVP reports no detected events.
-- SIGINT stops at a chunk boundary and finalizes the partial output/report.
-
-The encoder must be available in the linked FFmpeg build. The default output
-codec is H.264; use an LGPL-compatible FFmpeg build and review all codec/library
-licenses for commercial distribution. See [MODEL_LICENSES.md](MODEL_LICENSES.md).
-
 ## Linux Build
 
 Install a C++20 compiler, CMake, pkg-config, FFmpeg development libraries, and
