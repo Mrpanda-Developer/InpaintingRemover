@@ -1,0 +1,14 @@
+{
+  "preset": "balanced",
+  "chunk_duration_seconds": 8.0,
+  "overlap_seconds_per_boundary": 0.5,
+  "detection_interval_frames": 5,
+  "subtitle_region": "bottom-35",
+  "mask_padding_pixels": 6,
+  "mask_dilate_pixels": 3,
+  "temporal_radius_frames": 12,
+  "max_reference_distance_frames": 50,
+  "device": "cpu",
+  "video_codec": "h264",
+  "audio_mode": "copy"
+}

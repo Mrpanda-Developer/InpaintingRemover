@@ -1,61 +1,102 @@
-# InpaintingRemover
+# subtitle-remover
 
-## RTL frame extractor
+`subtitle-remover` is a C++20 command-line foundation for chunked video subtitle
+removal. This first milestone is intentionally a **passthrough-only MVP**: it
+decodes video with FFmpeg, buffers bounded temporal chunks with overlap, and
+re-encodes each central frame once while remuxing compatible audio. It does not
+yet remove subtitles, emit detection events, or run a neural model. The
+interfaces for detection, optical flow, and inpainting are in place for those
+follow-on stages.
 
-Build the dependency-free Rust command-line prototype with `cargo build --release`,
-then run:
+## Features In This Milestone
 
-```text
-target/release/RTL --gc localfile.mp4
-target/release/RTL --gc localfile.mov
+- FFmpeg C libraries for demuxing, decoding, encoding, and muxing; no FFmpeg CLI
+	is used in the processing pipeline.
+- OpenCV BGR frame conversion and replaceable detector, optical-flow, and
+	inpainter interfaces.
+- Default 8-second output chunks with 0.5-second context overlap on each side.
+- Only central frames are encoded. Original decoded presentation timestamps
+	are passed to the encoder; VFR input is not replaced with generated CFR PTS.
+- A three-stage decoder / processing / encoder handoff with bounded queues
+	(capacity three). The processing stage currently forwards chunks unchanged.
+- Compatible audio streams are packet-copied and timestamp-rescaled. Audio
+	codecs unsupported by the output container are omitted with a warning.
+- A JSON review report is always written beside the output unless
+	`--review-report` selects another path. This MVP reports no detected events.
+- SIGINT stops at a chunk boundary and finalizes the partial output/report.
+
+The encoder must be available in the linked FFmpeg build. The default output
+codec is H.264; use an LGPL-compatible FFmpeg build and review all codec/library
+licenses for commercial distribution. See [MODEL_LICENSES.md](MODEL_LICENSES.md).
+
+## Linux Build
+
+Install a C++20 compiler, CMake, pkg-config, FFmpeg development libraries, and
+OpenCV 4.5 or newer. For Debian/Ubuntu, package names are typically:
+
+```bash
+sudo apt install build-essential cmake pkg-config \
+	libavformat-dev libavcodec-dev libavutil-dev libswscale-dev libopencv-dev
 ```
 
-The command is intended to create `localfile_ai_frames/` beside the input. Each
-`frame_000000.ppm` file is an 8-bit RGB frame, and `manifest.txt` records its
-dimensions and order.
+Then configure, build, and run the focused timeline tests:
 
-This implementation parses the MP4/MOV ISO-BMFF container without external
-encoder or decoder libraries. Unsupported H.264 syntax returns an error and
-never produces placeholder pixels.
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
+```
 
-The first pure-Rust H.264 stage is now in `src/h264.rs`. It parses AVCC and
-Annex-B NAL units, removes emulation-prevention bytes, and reads SPS dimensions.
-For `test.mp4`, this reports a `464x832` H.264 stream with 4-byte NAL lengths.
-The decoder integration validates Baseline `avcC` parameter sets and contains
-the integer YUV 4:2:0 to RGB conversion used by the reconstruction stage.
-Full coded-slice reconstruction (CAVLC, intra/inter prediction, inverse
-transform, and reference-picture management) remains unsupported; the provided
-`test.mp4` therefore exits explicitly at its first type-1 coded slice.
+ONNX Runtime is not required for this milestone. The build exposes an opt-in
+discovery switch (`-DSUBTITLE_REMOVER_WITH_ONNXRUNTIME=ON`) for future use; no
+model is included and the current `OnnxInpainter` deliberately reports that it
+is not implemented.
 
-`src/decoded.rs` defines the next-stage AI contract: validated 8-bit RGB frames
-stored in a linked list and written as standard PPM (`P6`) images. PPM needs no
-image library and can be loaded directly by common computer-vision tooling. The
-H.264 slice decoder must populate `RgbFrame` before `*_ai_frames/` can be
-generated from an H.264 input.
+## Examples
 
-For production decoding, `RTL --gc` now uses the installed FFmpeg decoder and
-writes compressed PNG images to `test_ai_frames/` (or `<input>_ai_frames/`).
-Install FFmpeg on Windows with `winget install Gyan.FFmpeg.Shared`, then open a
-new terminal so `ffmpeg` is available on `PATH`.
+Run the passthrough pipeline with the requested balanced chunking defaults:
 
-The PNG decoder builds an `ImageFrameList` linked list in `src/decoded.rs`.
-Each node stores the frame index, image path, and dimensions; pixel bytes stay
-in the PNG file so a long video does not require all decoded images in memory.
+```bash
+build/subtitle-remover \
+	--input input.mxf \
+	--output output.mxf \
+	--chunk-duration 8 \
+	--overlap 0.5 \
+	--subtitle-region bottom-35 \
+	--detection-interval 5 \
+	--mask-padding 6 \
+	--temporal-radius 12 \
+	--device cpu \
+	--quality balanced
+```
 
-### Module layout
+The full accepted options are listed by `build/subtitle-remover --help`.
+Presets are `fast`, `balanced`, and `broadcast`; explicit option values are
+applied after the preset regardless of argument order. Example settings are in
+[examples/balanced-config.json](examples/balanced-config.json). That JSON file
+documents settings; it is not currently a runtime configuration input.
 
-- `src/cli.rs` parses commands and coordinates the application.
-- `src/bmff.rs` reads MP4/MOV container boxes and video sample tables.
-- `src/frames.rs` owns the linked-list frame data structure.
-- `src/decoded.rs` owns validated RGB frames and AI-ready PPM output.
-- `src/output.rs` retains the legacy encoded-sample writer.
-- `src/error.rs` contains shared application errors.
+Run the integration harness against a representative fixture:
 
-Future readers, decoders, or output formats can be added as modules without
-changing the linked-list or command entry point.
+```bash
+build/passthrough-integration input.mxf output.mxf
+```
 
-## workflow
-Please use the following conventions when submitting your code. First clone the repository, Then create a new branch with the following convention:
-git checkout -b <Yourname/*/**>
-* = could be bugfix, feature or refactor.<br>
-** = here the implementation of whatever you doing.
+The output report is `output.mxf.review.json`. The harness intentionally does
+not create fixtures or call the FFmpeg command-line executable.
+
+## Module Map
+
+- `video_reader` and `video_writer`: FFmpeg decode/encode/remux with RAII-owned
+	format, codec, frame, packet, and scaling resources.
+- `chunk_reader`: timestamp-based central windows plus bounded temporal context.
+- `processing_interfaces`: replaceable subtitle detector, optical flow,
+	OpenCV inpainter, and ONNX inpainter contracts.
+- `pipeline`: bounded three-stage event flow and review-report output.
+- `cli` and `config`: validation, options, and the fast/balanced/broadcast
+	presets.
+
+The next implementation milestone should verify fixture round-trips, packet
+timestamp and A/V sync behavior across supported muxers, then add subtitle
+events, temporal reconstruction, confidence scoring, and only then an optional
+commercially licensed model integration.
