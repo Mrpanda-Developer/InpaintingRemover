@@ -27,12 +27,6 @@ Full coded-slice reconstruction (CAVLC, intra/inter prediction, inverse
 transform, and reference-picture management) remains unsupported; the provided
 `test.mp4` therefore exits explicitly at its first type-1 coded slice.
 
-`src/decoded.rs` defines the next-stage AI contract: validated 8-bit RGB frames
-stored in a linked list and written as standard PPM (`P6`) images. PPM needs no
-image library and can be loaded directly by common computer-vision tooling. The
-H.264 slice decoder must populate `RgbFrame` before `*_ai_frames/` can be
-generated from an H.264 input.
-
 For production decoding, `RTL --gc` now uses the installed FFmpeg decoder and
 writes compressed PNG images to `test_ai_frames/` (or `<input>_ai_frames/`).
 Install FFmpeg on Windows with `winget install Gyan.FFmpeg.Shared`, then open a
